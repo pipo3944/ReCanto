@@ -7,7 +7,8 @@
     "start": "node backend/src/server.js",
     "server": "cd backend && npm run dev",
     "client": "cd frontend && npm start",
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "emulators": "cd backend && npm run emulators",
+    "dev": "concurrently \"npm run emulators\" \"npm run server\" \"npm run client\"",
     "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "build": "cd frontend && npm run build",
     "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend"
@@ -17,7 +18,7 @@
     "learning",
     "spaced-repetition",
     "vocabulary",
-    "mern"
+    "firebase"
   ],
   "author": "",
   "license": "MIT",

@@ -4,7 +4,7 @@ ReCanto is a web application designed to help users learn English vocabulary and
 
 ## Features
 
-- **User Authentication**: Register, login, and manage your profile
+- **User Authentication**: Register, login, and manage your profile using Firebase Authentication
 - **Sentence Management**: Add, edit, and delete English sentences or words you want to learn
 - **Spaced Repetition System**: Based on the Leitner method with 7 boxes
 - **Visual Learning**: Associate images with sentences to enhance memory
@@ -21,8 +21,9 @@ ReCanto is a web application designed to help users learn English vocabulary and
 
 ### Backend
 - Node.js with Express
-- MongoDB for database
-- JWT for authentication
+- Firebase Authentication
+- Firestore for database
+- Firebase Admin SDK
 - RESTful API architecture
 
 ## Project Structure
@@ -36,63 +37,98 @@ ReCanto/
 │       └── pages/      # Page components
 ├── backend/            # Node.js backend application
 │   ├── src/
-│       ├── config/     # Configuration files
+│       ├── config/     # Firebase configuration
 │       ├── controllers/# Route controllers
 │       ├── middleware/ # Custom middleware
-│       ├── models/     # Database models
+│       ├── models/     # Data models
 │       └── routes/     # API routes
 └── README.md           # Project documentation
 ```
 
-## Getting Started
+## Prerequisites
 
-### Prerequisites
 - Node.js (v14 or higher)
-- MongoDB (local or Atlas)
+- Firebase Account
+- Firebase CLI
+- Firebase Emulators
 
-### Installation
+## Firebase Setup
+
+1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
+
+2. Enable the following services:
+   - Authentication (Email/Password)
+   - Firestore Database
+   - Firebase Emulators
+
+3. Generate a service account key:
+   - Go to Project Settings > Service Accounts
+   - Click "Generate new private key"
+   - Save the JSON file securely
+
+## Installation
 
 1. Clone the repository
-```
+```bash
 git clone https://github.com/yourusername/recanto.git
 cd recanto
 ```
 
-2. Install backend dependencies
+2. Install Firebase CLI (if not already installed)
+```bash
+npm install -g firebase-tools
 ```
+
+3. Login to Firebase
+```bash
+firebase login
+```
+
+4. Install backend dependencies
+```bash
 cd backend
 npm install
 ```
 
-3. Install frontend dependencies
-```
+5. Install frontend dependencies
+```bash
 cd ../frontend
 npm install
 ```
 
-4. Set up environment variables
-   - Create a `.env` file in the backend directory
-   - Add the following variables:
-     ```
-     PORT=5000
-     MONGO_URI=mongodb://localhost:27017/recanto
-     JWT_SECRET=your_jwt_secret_key_here
-     NODE_ENV=development
-     ```
+6. Configure environment variables
+   - In `backend/.env`, replace placeholders with your Firebase project details
+   ```
+   FIREBASE_PROJECT_ID=your-project-id
+   FIREBASE_API_KEY=your-api-key
+   FIREBASE_AUTH_DOMAIN=your-auth-domain
+   # ... other Firebase config values
+   ```
 
-5. Start the backend server
-```
-cd ../backend
-npm run dev
-```
+## Running the Application
 
-6. Start the frontend development server
-```
-cd ../frontend
-npm start
+### Local Development with Firebase Emulators
+
+1. Start Firebase Emulators
+```bash
+cd backend
+npm run emulators
 ```
 
-7. Open your browser and navigate to `http://localhost:3000`
+2. In another terminal, start the backend and frontend
+```bash
+npm run dev:emulators
+```
+
+### Production Deployment
+
+1. Build frontend
+```bash
+cd frontend
+npm run build
+```
+
+2. Deploy backend to your preferred hosting service (Firebase Functions, Heroku, etc.)
 
 ## Spaced Repetition System
 
@@ -116,6 +152,14 @@ When you remember a sentence, it moves up one box. When you forget, it goes back
 - Gamification elements
 - Audio pronunciation
 
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.

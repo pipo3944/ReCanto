@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { validationResult } = require("express-validator");
 const User = require("../models/User");
+const { auth } = require("../config/firebase");
 
 // @desc    Register a new user
 // @route   POST /api/auth/register
@@ -15,21 +16,12 @@ exports.register = async (req, res) => {
   const { name, email, password } = req.body;
 
   try {
-    // Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ message: "User already exists" });
-    }
-
     // Create new user
-    user = new User({
+    const user = await User.create({
       name,
       email,
       password,
     });
-
-    // Save user to database
-    await user.save();
 
     // Generate JWT token
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
@@ -47,6 +39,9 @@ exports.register = async (req, res) => {
     });
   } catch (error) {
     console.error("Register error:", error.message);
+    if (error.message === "User already exists") {
+      return res.status(400).json({ message: "User already exists" });
+    }
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -64,17 +59,14 @@ exports.login = async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // Check if user exists
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ message: "Invalid credentials" });
-    }
-
     // Check if password is correct
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await User.comparePassword(email, password);
     if (!isMatch) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
+
+    // Find user by email
+    const user = await User.findByEmail(email);
 
     // Generate JWT token
     const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
@@ -122,22 +114,15 @@ exports.updateProfile = async (req, res) => {
   const { name, avatar } = req.body;
 
   try {
-    // Find user by id
-    const user = await User.findById(req.user.id);
-
-    // Update user fields
-    if (name) user.name = name;
-    if (avatar) user.avatar = avatar;
-
-    // Save updated user
-    await user.save();
+    // Update user profile
+    const updatedUser = await User.updateProfile(req.user.id, { name, avatar });
 
     // Return updated user
     res.json({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
+      id: updatedUser.id,
+      name: updatedUser.name,
+      email: updatedUser.email,
+      avatar: updatedUser.avatar,
     });
   } catch (error) {
     console.error("Update profile error:", error.message);

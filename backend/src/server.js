@@ -1,11 +1,13 @@
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
-const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 
 // Load environment variables
 dotenv.config();
+
+// Import Firebase configuration
+const { db, useEmulator } = require("./config/firebase");
 
 // Import routes
 const authRoutes = require("./routes/auth");
@@ -29,7 +31,10 @@ app.use("/api/stats", statsRoutes);
 
 // Root route
 app.get("/", (req, res) => {
-  res.json({ message: "Welcome to ReCanto API" });
+  res.json({
+    message: "Welcome to ReCanto API",
+    usingEmulator: useEmulator,
+  });
 });
 
 // Error handling middleware
@@ -41,21 +46,11 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Connect to MongoDB and start server
+// Start server
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/recanto";
 
-mongoose
-  .connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => {
-    console.log("Connected to MongoDB");
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch((err) => {
-    console.error("Failed to connect to MongoDB", err);
-  });
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
+  console.log(`Firebase Emulator: ${useEmulator ? "Enabled" : "Disabled"}`);
+});

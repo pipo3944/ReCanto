@@ -1,17 +1,12 @@
 const Sentence = require("../models/Sentence");
+const { firebaseUtils } = require("../config/firebase");
 
 // @desc    Get sentences due for quiz
 // @route   GET /api/quiz/due
 // @access  Private
 exports.getDueQuizItems = async (req, res) => {
   try {
-    const now = new Date();
-    const sentences = await Sentence.find({
-      user: req.user.id,
-      nextReview: { $lte: now },
-      completed: false,
-    }).sort({ nextReview: 1 });
-
+    const sentences = await Sentence.getDueSentences(req.user.id);
     res.json(sentences);
   } catch (error) {
     console.error("Get due quiz items error:", error.message);
@@ -31,34 +26,25 @@ exports.updateReviewStatus = async (req, res) => {
   }
 
   try {
-    // Find sentence by id
-    const sentence = await Sentence.findById(req.params.id);
-
-    // Check if sentence exists
-    if (!sentence) {
-      return res.status(404).json({ message: "Sentence not found" });
-    }
-
-    // Check if sentence belongs to user
-    if (sentence.user.toString() !== req.user.id) {
-      return res.status(401).json({ message: "Not authorized" });
-    }
-
     // Update review status
-    sentence.updateReviewStatus(remembered);
-
-    // Save updated sentence
-    await sentence.save();
+    const updatedSentence = await Sentence.updateReviewStatus(
+      req.params.id,
+      req.user.id,
+      remembered
+    );
 
     res.json({
-      sentence,
-      nextReview: sentence.nextReview,
-      box: sentence.box,
-      completed: sentence.completed,
+      sentence: updatedSentence,
+      nextReview: updatedSentence.nextReview,
+      box: updatedSentence.box,
+      completed: updatedSentence.completed,
     });
   } catch (error) {
     console.error("Update review status error:", error.message);
-    if (error.kind === "ObjectId") {
+    if (error.message === "Not authorized") {
+      return res.status(401).json({ message: "Not authorized" });
+    }
+    if (error.message === "Sentence not found") {
       return res.status(404).json({ message: "Sentence not found" });
     }
     res.status(500).json({ message: "Server error" });
@@ -73,34 +59,44 @@ exports.getQuizSchedule = async (req, res) => {
     const now = new Date();
     const oneWeekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    // Get sentences due in the next 7 days
-    const sentences = await Sentence.find({
-      user: req.user.id,
-      nextReview: { $gte: now, $lte: oneWeekLater },
-      completed: false,
-    }).sort({ nextReview: 1 });
+    // Get all sentences for the user
+    const sentences = await Sentence.findByUser(req.user.id, {
+      sortBy: "nextReview",
+      sortOrder: "asc",
+    });
+
+    // Filter sentences due in the next 7 days
+    const upcomingSentences = sentences.filter((sentence) => {
+      const nextReview = firebaseUtils.timestampToDate(sentence.nextReview);
+      return (
+        !sentence.completed && nextReview >= now && nextReview <= oneWeekLater
+      );
+    });
 
     // Group sentences by day
     const schedule = {};
-    sentences.forEach((sentence) => {
-      const date = sentence.nextReview.toISOString().split("T")[0]; // YYYY-MM-DD
+    upcomingSentences.forEach((sentence) => {
+      const date = firebaseUtils
+        .timestampToDate(sentence.nextReview)
+        .toISOString()
+        .split("T")[0]; // YYYY-MM-DD
+
       if (!schedule[date]) {
         schedule[date] = [];
       }
       schedule[date].push({
-        id: sentence._id,
+        id: sentence.id,
         sentence: sentence.sentence,
         box: sentence.box,
       });
     });
 
     // Get count of sentences due today
-    const today = now.toISOString().split("T")[0];
-    const dueToday = await Sentence.countDocuments({
-      user: req.user.id,
-      nextReview: { $lte: now },
-      completed: false,
-    });
+    const dueToday = sentences.filter(
+      (sentence) =>
+        !sentence.completed &&
+        firebaseUtils.timestampToDate(sentence.nextReview) <= now
+    ).length;
 
     res.json({
       dueToday,
@@ -117,70 +113,55 @@ exports.getQuizSchedule = async (req, res) => {
 // @access  Private
 exports.getQuizStats = async (req, res) => {
   try {
-    // Get total sentences
-    const totalSentences = await Sentence.countDocuments({
-      user: req.user.id,
-    });
+    // Get all sentences for the user
+    const sentences = await Sentence.findByUser(req.user.id);
 
-    // Get completed sentences
-    const completedSentences = await Sentence.countDocuments({
-      user: req.user.id,
-      completed: true,
-    });
+    // Calculate total and completed sentences
+    const totalSentences = sentences.length;
+    const completedSentences = sentences.filter((s) => s.completed).length;
 
-    // Get sentences by box
-    const boxDistribution = await Sentence.aggregate([
-      { $match: { user: req.user.id } },
-      { $group: { _id: "$box", count: { $sum: 1 } } },
-      { $sort: { _id: 1 } },
-    ]);
-
-    // Format box distribution
-    const formattedBoxDistribution = Array.from({ length: 7 }, (_, i) => ({
+    // Calculate box distribution
+    const boxDistribution = Array.from({ length: 7 }, (_, i) => ({
       box: i + 1,
-      count: 0,
+      count: sentences.filter((s) => s.box === i + 1).length,
     }));
 
-    boxDistribution.forEach((item) => {
-      if (item._id >= 1 && item._id <= 7) {
-        formattedBoxDistribution[item._id - 1].count = item.count;
-      }
-    });
+    // Calculate review history
+    const reviewHistory = sentences.flatMap((sentence) =>
+      (sentence.reviewHistory || []).map((review) => ({
+        date: firebaseUtils
+          .timestampToDate(review.date)
+          .toISOString()
+          .split("T")[0],
+        remembered: review.remembered,
+        forgotten: !review.remembered,
+      }))
+    );
 
-    // Get review history stats
-    const reviewHistory = await Sentence.aggregate([
-      { $match: { user: req.user.id } },
-      { $unwind: "$reviewHistory" },
-      {
-        $group: {
-          _id: {
-            $dateToString: {
-              format: "%Y-%m-%d",
-              date: "$reviewHistory.date",
-            },
-          },
-          remembered: {
-            $sum: {
-              $cond: [{ $eq: ["$reviewHistory.remembered", true] }, 1, 0],
-            },
-          },
-          forgotten: {
-            $sum: {
-              $cond: [{ $eq: ["$reviewHistory.remembered", false] }, 1, 0],
-            },
-          },
-          total: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: -1 } },
-      { $limit: 30 }, // Last 30 days
-    ]);
+    // Group review history
+    const groupedReviewHistory = reviewHistory
+      .reduce((acc, item) => {
+        const existing = acc.find((a) => a._id === item.date);
+        if (existing) {
+          existing.remembered += item.remembered ? 1 : 0;
+          existing.forgotten += item.forgotten ? 1 : 0;
+        } else {
+          acc.push({
+            _id: item.date,
+            remembered: item.remembered ? 1 : 0,
+            forgotten: item.forgotten ? 1 : 0,
+          });
+        }
+        return acc;
+      }, [])
+      .sort((a, b) => a._id.localeCompare(b._id))
+      .slice(-30); // Last 30 days
 
     res.json({
       totalSentences,
       completedSentences,
-      boxDistribution: formattedBoxDistribution,
-      reviewHistory,
+      boxDistribution,
+      reviewHistory: groupedReviewHistory,
     });
   } catch (error) {
     console.error("Get quiz stats error:", error.message);
