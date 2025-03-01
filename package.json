@@ -1,0 +1,27 @@
+{
+  "name": "recanto",
+  "version": "1.0.0",
+  "description": "ReCanto - Efficient English Learning Application",
+  "main": "index.js",
+  "scripts": {
+    "start": "node backend/src/server.js",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm start",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "heroku-postbuild": "NPM_CONFIG_PRODUCTION=false npm install --prefix frontend && npm run build --prefix frontend"
+  },
+  "keywords": [
+    "english",
+    "learning",
+    "spaced-repetition",
+    "vocabulary",
+    "mern"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
