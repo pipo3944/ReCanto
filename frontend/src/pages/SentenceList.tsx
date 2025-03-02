@@ -1,81 +1,133 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  deleteDoc, 
+  doc 
+} from 'firebase/firestore';
+import { db, useEmulator, firebaseUtils } from '../config/firebaseConfig';
+import { useAuth } from '../contexts/AuthContext';
 import './SentenceList.css';
 
-// Mock data for demonstration
-const mockSentences = [
-  {
-    id: 1,
-    sentence: 'Serendipity',
-    definition: 'The occurrence and development of events by chance in a happy or beneficial way',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 2,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2), // 2 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24), // 1 day from now
-  },
-  {
-    id: 2,
-    sentence: 'Ephemeral',
-    definition: 'Lasting for a very short time',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 3,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5), // 5 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3), // 3 days from now
-  },
-  {
-    id: 3,
-    sentence: 'Ubiquitous',
-    definition: 'Present, appearing, or found everywhere',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 1,
-    lastReviewed: null,
-    nextReview: new Date(), // Today
-  },
-  {
-    id: 4,
-    sentence: 'Mellifluous',
-    definition: 'Pleasant to hear; sweet-sounding',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 4,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 10), // 10 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7), // 7 days from now
-  },
-  {
-    id: 5,
-    sentence: 'Quintessential',
-    definition: 'Representing the most perfect example of a quality or class',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 5,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 15), // 15 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24 * 14), // 14 days from now
-  },
-];
+interface Sentence {
+  id: string;
+  sentence: string;
+  definition: string;
+  imageUrl?: string;
+  box: number;
+  lastReviewed: Date | null;
+  nextReview: Date | null;
+}
 
 const SentenceList: React.FC = () => {
-  const [sentences, setSentences] = useState(mockSentences);
+  const [sentences, setSentences] = useState<Sentence[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterBox, setFilterBox] = useState<number | null>(null);
   const [sortBy, setSortBy] = useState<string>('nextReview');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
 
-  // In a real app, you would fetch this data from your API
   useEffect(() => {
-    // Example API call:
-    // const fetchSentences = async () => {
-    //   try {
-    //     const token = localStorage.getItem('token');
-    //     const response = await fetch('/api/sentences', {
-    //       headers: {
-    //         'Authorization': `Bearer ${token}`
-    //       }
-    //     });
-    //     const data = await response.json();
-    //     setSentences(data);
-    //   } catch (error) {
-    //     console.error('Error fetching sentences:', error);
-    //   }
-    // };
-    // fetchSentences();
-  }, []);
+    const fetchSentences = async () => {
+      if (!currentUser) {
+        setError('User not authenticated');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const sentencesRef = collection(db, 'sentences');
+        
+        // Enhanced diagnostic logging
+        console.group('🔍 Sentence Fetch Diagnostics');
+        console.log('User ID:', currentUser.uid);
+        console.log('Firestore Database:', db);
+        console.log('Emulator Mode:', useEmulator);
+        console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
+
+        // Attempt to fetch all documents first to diagnose any potential issues
+        const allDocsSnapshot = await getDocs(sentencesRef);
+        console.log('Total Documents in Collection:', allDocsSnapshot.size);
+
+        // Always use user-specific query for better security
+        console.log('🌐 Using User-Specific Query Mode');
+        const q = query(sentencesRef, where('userId', '==', currentUser.uid));
+
+        const querySnapshot = await getDocs(q);
+        console.log('Documents Matching Query:', querySnapshot.size);
+
+        const fetchedSentences: Sentence[] = querySnapshot.docs
+          .filter(docSnap => {
+            const data = docSnap.data();
+            const isValid = (
+              // Always check for required fields
+              data.sentence && 
+              data.definition && 
+              // In production or emulator, ensure userId matches
+              (useEmulator || data.userId === currentUser.uid)
+            );
+            
+            if (!isValid) {
+              console.warn('🚨 Invalid Document Filtered:', docSnap.id, {
+                hasValidSentence: !!data.sentence,
+                hasValidDefinition: !!data.definition,
+                userIdMatch: data.userId === currentUser.uid,
+                emulatorMode: useEmulator
+              });
+            }
+            
+            return isValid;
+          })
+          .map(docSnap => {
+            const data = docSnap.data();
+            console.log('📄 Sentence Document:', docSnap.id, {
+              ...data,
+              userId: '***' // Mask user ID for privacy
+            });
+            
+            return {
+              id: docSnap.id,
+              ...data,
+              lastReviewed: data.lastReviewed ? data.lastReviewed.toDate() : null,
+              nextReview: data.nextReview ? data.nextReview.toDate() : null
+            } as Sentence;
+          });
+
+        console.log('✅ Fetched Sentences:', fetchedSentences.length);
+        console.groupEnd();
+
+        setSentences(fetchedSentences);
+        setIsLoading(false);
+      } catch (err) {
+        console.group('❌ Sentence Fetch Error');
+        console.error('Detailed Error:', err);
+        
+        if (err instanceof Error) {
+          console.error('Error Name:', err.name);
+          console.error('Error Message:', err.message);
+          console.error('Error Stack:', err.stack);
+        }
+        
+        // Attempt to reconnect emulator if connection failed
+        if (!firebaseUtils.isEmulatorConnected()) {
+          console.log('🔄 Attempting to reconnect emulator');
+          firebaseUtils.retryEmulatorConnection();
+        }
+        
+        console.groupEnd();
+        
+        setError(`Failed to fetch sentences: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setIsLoading(false);
+      }
+    };
+
+    fetchSentences();
+  }, [currentUser]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
@@ -88,6 +140,19 @@ const SentenceList: React.FC = () => {
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setSortBy(e.target.value);
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      // Delete from Firestore
+      await deleteDoc(doc(db, 'sentences', id));
+      
+      // Remove from local state
+      setSentences(sentences.filter(sentence => sentence.id !== id));
+    } catch (err) {
+      console.error('Error deleting sentence:', err);
+      setError('Failed to delete sentence');
+    }
   };
 
   const filteredSentences = sentences
@@ -106,6 +171,8 @@ const SentenceList: React.FC = () => {
         if (!b.lastReviewed) return -1;
         return b.lastReviewed.getTime() - a.lastReviewed.getTime();
       } else { // nextReview
+        if (!a.nextReview) return 1;
+        if (!b.nextReview) return -1;
         return a.nextReview.getTime() - b.nextReview.getTime();
       }
     });
@@ -115,11 +182,13 @@ const SentenceList: React.FC = () => {
     return date.toLocaleDateString();
   };
 
-  const handleDelete = (id: number) => {
-    // In a real app, you would call your API to delete the sentence
-    // For demo purposes, we'll just update the state
-    setSentences(sentences.filter(sentence => sentence.id !== id));
-  };
+  if (isLoading) {
+    return <div className="loading">Loading sentences...</div>;
+  }
+
+  if (error) {
+    return <div className="error">{error}</div>;
+  }
 
   return (
     <div className="sentence-list-page">

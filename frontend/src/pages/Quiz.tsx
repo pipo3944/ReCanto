@@ -1,34 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  doc, 
+  updateDoc, 
+  Timestamp 
+} from 'firebase/firestore';
+import { db } from '../config/firebaseConfig';
+import { useAuth } from '../contexts/AuthContext';
 import './Quiz.css';
 
-// Mock data for demonstration
-const mockQuizItems = [
-  {
-    id: 1,
-    sentence: 'Serendipity',
-    definition: 'The occurrence and development of events by chance in a happy or beneficial way',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 2,
-  },
-  {
-    id: 2,
-    sentence: 'Ephemeral',
-    definition: 'Lasting for a very short time',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 3,
-  },
-  {
-    id: 3,
-    sentence: 'Ubiquitous',
-    definition: 'Present, appearing, or found everywhere',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 1,
-  },
-];
+interface QuizItem {
+  id: string;
+  sentence: string;
+  definition: string;
+  imageUrl?: string;
+  box: number;
+  nextReview: Date;
+}
 
 const Quiz: React.FC = () => {
-  const [quizItems, setQuizItems] = useState(mockQuizItems);
+  const [quizItems, setQuizItems] = useState<QuizItem[]>([]);
   const [currentItemIndex, setCurrentItemIndex] = useState(0);
   const [showDefinition, setShowDefinition] = useState(false);
   const [showImage, setShowImage] = useState(false);
@@ -36,29 +31,49 @@ const Quiz: React.FC = () => {
   const [stats, setStats] = useState({
     remembered: 0,
     forgotten: 0,
-    total: mockQuizItems.length,
+    total: 0,
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
 
-  // In a real app, you would fetch this data from your API
   useEffect(() => {
-    // Example API call:
-    // const fetchQuizItems = async () => {
-    //   try {
-    //     const token = localStorage.getItem('token');
-    //     const response = await fetch('/api/quiz/due', {
-    //       headers: {
-    //         'Authorization': `Bearer ${token}`
-    //       }
-    //     });
-    //     const data = await response.json();
-    //     setQuizItems(data);
-    //     setStats(prev => ({ ...prev, total: data.length }));
-    //   } catch (error) {
-    //     console.error('Error fetching quiz items:', error);
-    //   }
-    // };
-    // fetchQuizItems();
-  }, []);
+    const fetchQuizItems = async () => {
+      if (!currentUser) {
+        setError('User not authenticated');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const sentencesRef = collection(db, 'sentences');
+        const now = new Date();
+        const quizQuery = query(
+          sentencesRef, 
+          where('userId', '==', currentUser.uid),
+          where('nextReview', '<=', now)
+        );
+        
+        const querySnapshot = await getDocs(quizQuery);
+        const fetchedQuizItems: QuizItem[] = querySnapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+          nextReview: docSnap.data().nextReview.toDate(),
+        } as QuizItem));
+
+        setQuizItems(fetchedQuizItems);
+        setStats(prev => ({ ...prev, total: fetchedQuizItems.length }));
+        setIsLoading(false);
+      } catch (err) {
+        console.error('Error fetching quiz items:', err);
+        setError('Failed to fetch quiz items');
+        setIsLoading(false);
+      }
+    };
+
+    fetchQuizItems();
+  }, [currentUser]);
 
   const currentItem = quizItems[currentItemIndex];
 
@@ -70,58 +85,53 @@ const Quiz: React.FC = () => {
     setShowImage(true);
   };
 
+  const updateSentenceBox = async (remembered: boolean) => {
+    if (!currentItem) return;
+
+    try {
+      const sentenceRef = doc(db, 'sentences', currentItem.id);
+      const now = new Date();
+      const nextReviewDate = new Date();
+
+      let newBox = currentItem.box;
+      if (remembered) {
+        // Increase box level if remembered
+        newBox = Math.min(newBox + 1, 7);
+        // Increase time between reviews exponentially
+        nextReviewDate.setDate(now.getDate() + Math.pow(2, newBox));
+      } else {
+        // Reset box to 1 if forgotten
+        newBox = 1;
+        // Short delay before next review
+        nextReviewDate.setDate(now.getDate() + 1);
+      }
+
+      await updateDoc(sentenceRef, {
+        box: newBox,
+        lastReviewed: Timestamp.fromDate(now),
+        nextReview: Timestamp.fromDate(nextReviewDate)
+      });
+    } catch (err) {
+      console.error('Error updating sentence:', err);
+    }
+  };
+
   const handleRemembered = async () => {
-    // In a real app, you would update the item's status in your API
-    // For demo purposes, we'll just update the local state
+    await updateSentenceBox(true);
     setStats(prev => ({
       ...prev,
       remembered: prev.remembered + 1,
     }));
-
-    // Move to the next item or complete the quiz
     moveToNextItem();
-
-    // Example of how the actual API call would look:
-    /*
-    try {
-      const token = localStorage.getItem('token');
-      await fetch(`/api/sentences/${currentItem.id}/remembered`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-    } catch (error) {
-      console.error('Error updating sentence status:', error);
-    }
-    */
   };
 
   const handleForgotten = async () => {
-    // In a real app, you would update the item's status in your API
-    // For demo purposes, we'll just update the local state
+    await updateSentenceBox(false);
     setStats(prev => ({
       ...prev,
       forgotten: prev.forgotten + 1,
     }));
-
-    // Move to the next item or complete the quiz
     moveToNextItem();
-
-    // Example of how the actual API call would look:
-    /*
-    try {
-      const token = localStorage.getItem('token');
-      await fetch(`/api/sentences/${currentItem.id}/forgotten`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-    } catch (error) {
-      console.error('Error updating sentence status:', error);
-    }
-    */
   };
 
   const moveToNextItem = () => {
@@ -145,6 +155,14 @@ const Quiz: React.FC = () => {
       total: quizItems.length,
     });
   };
+
+  if (isLoading) {
+    return <div className="loading">Loading quiz...</div>;
+  }
+
+  if (error) {
+    return <div className="error">{error}</div>;
+  }
 
   if (quizItems.length === 0) {
     return (

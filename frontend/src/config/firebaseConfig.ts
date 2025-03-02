@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator } from 'firebase/auth';
-import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  connectFirestoreEmulator, 
+  enableIndexedDbPersistence,
+  connectFirestoreEmulator as _connectFirestoreEmulator
+} from 'firebase/firestore';
 
 // Firebase configuration object
 const firebaseConfig = {
@@ -19,16 +24,41 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Connect to emulators if in development mode
-if (process.env.NODE_ENV === 'development' || process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true') {
-  console.log('Connecting to Firebase Emulators');
-  
-  // Connect Auth Emulator
-  connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
-  
-  // Connect Firestore Emulator
-  connectFirestoreEmulator(db, 'localhost', 8080);
+// Determine emulator usage
+const useEmulator = process.env.NODE_ENV === 'development' || process.env.REACT_APP_USE_FIREBASE_EMULATOR === 'true';
+
+// Enhanced emulator connection function
+function setupFirebaseEmulators() {
+  if (!useEmulator) return false;
+
+  try {
+    console.log('🔧 Setting up Firebase Emulators');
+    
+    // Connect Auth Emulator
+    connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+    
+    // Connect Firestore Emulator with additional logging
+    try {
+      _connectFirestoreEmulator(db, 'localhost', 8080);
+      console.log('✅ Successfully connected to Firestore Emulator');
+      return true;
+    } catch (firestoreErr) {
+      console.error('❌ Failed to connect to Firestore Emulator:', firestoreErr);
+      return false;
+    }
+  } catch (err) {
+    console.error('❌ Error setting up Firebase Emulators:', err);
+    return false;
+  }
 }
+
+// Attempt to set up emulators immediately
+const isEmulatorConnected = setupFirebaseEmulators();
+
+// Enable offline persistence after emulator setup
+enableIndexedDbPersistence(db).catch((err) => {
+  console.error('Error enabling offline persistence:', err);
+});
 
 // Firebase utility functions
 const firebaseUtils = {
@@ -37,12 +67,18 @@ const firebaseUtils = {
     return timestamp ? timestamp.toDate() : null;
   },
 
-  // Optional: Add more utility methods as needed
+  // Check if emulator is connected
+  isEmulatorConnected: () => isEmulatorConnected,
+
+  // Retry emulator connection
+  retryEmulatorConnection: setupFirebaseEmulators
 };
 
 export { 
   app, 
   auth, 
   db, 
-  firebaseUtils 
+  firebaseUtils,
+  useEmulator,
+  isEmulatorConnected 
 };

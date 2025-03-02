@@ -1,81 +1,134 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  orderBy, 
+  limit 
+} from 'firebase/firestore';
+import { db } from '../config/firebaseConfig';
+import { useAuth } from '../contexts/AuthContext';
 import './Dashboard.css';
 
-// Mock data for demonstration
-const mockQuizItems = [
-  {
-    id: 1,
-    sentence: 'Serendipity',
-    dueDate: new Date(),
-    box: 2,
-  },
-  {
-    id: 2,
-    sentence: 'Ephemeral',
-    dueDate: new Date(Date.now() + 1000 * 60 * 60), // 1 hour from now
-    box: 3,
-  },
-  {
-    id: 3,
-    sentence: 'Ubiquitous',
-    dueDate: new Date(Date.now() + 1000 * 60 * 60 * 2), // 2 hours from now
-    box: 1,
-  },
-];
+interface QuizItem {
+  id: string;
+  sentence: string;
+  dueDate: Date;
+  box: number;
+}
 
-const mockRecentItems = [
-  {
-    id: 4,
-    sentence: 'Mellifluous',
-    definition: 'Pleasant to hear; sweet-sounding',
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-    box: 4,
-  },
-  {
-    id: 5,
-    sentence: 'Quintessential',
-    definition: 'Representing the most perfect example of a quality or class',
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 48), // 2 days ago
-    box: 5,
-  },
-];
+interface RecentItem {
+  id: string;
+  sentence: string;
+  definition: string;
+  lastReviewed: Date;
+  box: number;
+}
 
 const Dashboard: React.FC = () => {
-  const [quizItems, setQuizItems] = useState(mockQuizItems);
-  const [recentItems, setRecentItems] = useState(mockRecentItems);
+  const [quizItems, setQuizItems] = useState<QuizItem[]>([]);
+  const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   const [stats, setStats] = useState({
-    totalSentences: 42,
-    completedSentences: 15,
-    inProgressSentences: 27,
-    todayReviews: 5,
+    totalSentences: 0,
+    completedSentences: 0,
+    inProgressSentences: 0,
+    todayReviews: 0,
   });
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const { currentUser } = useAuth();
 
-  // In a real app, you would fetch this data from your API
   useEffect(() => {
-    // Example API call:
-    // const fetchDashboardData = async () => {
-    //   try {
-    //     const token = localStorage.getItem('token');
-    //     const response = await fetch('/api/dashboard', {
-    //       headers: {
-    //         'Authorization': `Bearer ${token}`
-    //       }
-    //     });
-    //     const data = await response.json();
-    //     setQuizItems(data.quizItems);
-    //     setRecentItems(data.recentItems);
-    //     setStats(data.stats);
-    //   } catch (error) {
-    //     console.error('Error fetching dashboard data:', error);
-    //   }
-    // };
-    // fetchDashboardData();
-  }, []);
+    const fetchDashboardData = async () => {
+      if (!currentUser) {
+        setError('User not authenticated');
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const sentencesRef = collection(db, 'sentences');
+
+        // Fetch quiz items (sentences due for review)
+        const now = new Date();
+        const quizQuery = query(
+          sentencesRef, 
+          where('userId', '==', currentUser.uid),
+          where('nextReview', '!=', null)
+        );
+        
+        const quizSnapshot = await getDocs(quizQuery);
+        const fetchedQuizItems: QuizItem[] = quizSnapshot.docs
+          .filter(doc => {
+            const nextReview = doc.data().nextReview?.toDate();
+            return nextReview && nextReview <= now;
+          })
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            dueDate: doc.data().nextReview.toDate(),
+          } as QuizItem));
+
+        // Fetch recently reviewed items
+        const recentQuery = query(
+          sentencesRef, 
+          where('userId', '==', currentUser.uid),
+          where('lastReviewed', '!=', null),
+          orderBy('lastReviewed', 'desc'),
+          limit(5)
+        );
+        const recentSnapshot = await getDocs(recentQuery);
+        const fetchedRecentItems: RecentItem[] = recentSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          lastReviewed: doc.data().lastReviewed.toDate(),
+        } as RecentItem));
+
+        // Calculate stats
+        const totalSentencesQuery = query(
+          sentencesRef, 
+          where('userId', '==', currentUser.uid)
+        );
+        const totalSentencesSnapshot = await getDocs(totalSentencesQuery);
+        const totalSentences = totalSentencesSnapshot.size;
+
+        const completedSentences = fetchedRecentItems.filter(item => item.box >= 5).length;
+        const inProgressSentences = totalSentences - completedSentences;
+        const todayReviews = fetchedQuizItems.length;
+
+        setQuizItems(fetchedQuizItems);
+        setRecentItems(fetchedRecentItems);
+        setStats({
+          totalSentences,
+          completedSentences,
+          inProgressSentences,
+          todayReviews,
+        });
+        setIsLoading(false);
+      } catch (err) {
+        console.error('Detailed error fetching dashboard data:', err);
+        setError(`Failed to fetch dashboard data: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+  }, [currentUser]);
 
   const formatDate = (date: Date) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  if (isLoading) {
+    return <div className="loading">Loading dashboard...</div>;
+  }
+
+  if (error) {
+    return <div className="error">{error}</div>;
+  }
 
   return (
     <div className="dashboard">

@@ -1,69 +1,157 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { 
+  collection, 
+  addDoc, 
+  doc, 
+  getDoc, 
+  updateDoc, 
+  Timestamp,
+  getDocs 
+} from 'firebase/firestore';
+import { db, useEmulator, firebaseUtils } from '../config/firebaseConfig';
+import { useAuth } from '../contexts/AuthContext';
 import './SentenceForm.css';
-
-// Mock data for demonstration
-const mockSentences = [
-  {
-    id: 1,
-    sentence: 'Serendipity',
-    definition: 'The occurrence and development of events by chance in a happy or beneficial way',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 2,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2), // 2 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24), // 1 day from now
-  },
-  {
-    id: 2,
-    sentence: 'Ephemeral',
-    definition: 'Lasting for a very short time',
-    imageUrl: 'https://via.placeholder.com/150',
-    box: 3,
-    lastReviewed: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5), // 5 days ago
-    nextReview: new Date(Date.now() + 1000 * 60 * 60 * 24 * 3), // 3 days from now
-  },
-];
 
 interface SentenceFormData {
   sentence: string;
   definition: string;
   imageUrl: string;
+  userId: string;
+  box: number;
+  lastReviewed: Date | null;
+  nextReview: Date | null;
 }
 
 const SentenceForm: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isEditMode = !!id;
+  const { currentUser } = useAuth();
 
   const [formData, setFormData] = useState<SentenceFormData>({
     sentence: '',
     definition: '',
     imageUrl: '',
+    userId: '',
+    box: 1,
+    lastReviewed: null,
+    nextReview: null,
   });
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [success, setSuccess] = useState<string>('');
   const [imagePreview, setImagePreview] = useState<string>('');
-  const [suggestedDefinition, setSuggestedDefinition] = useState<string>('');
-  const [suggestedImages, setSuggestedImages] = useState<string[]>([]);
 
   useEffect(() => {
-    if (isEditMode) {
-      // In a real app, you would fetch the sentence data from your API
-      // For demo purposes, we'll use the mock data
-      const sentence = mockSentences.find(s => s.id === parseInt(id as string));
-      if (sentence) {
-        setFormData({
-          sentence: sentence.sentence,
-          definition: sentence.definition,
-          imageUrl: sentence.imageUrl,
-        });
-        setImagePreview(sentence.imageUrl);
-      } else {
-        setError('Sentence not found');
+    const checkAndCreateInitialSentences = async () => {
+      if (!currentUser) return;
+
+      try {
+        console.group('🌱 Initial Sentences Check');
+        console.log('User ID:', currentUser.uid);
+        console.log('Emulator Mode:', useEmulator);
+        console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
+
+        const sentencesRef = collection(db, 'sentences');
+        const sentencesSnapshot = await getDocs(sentencesRef);
+
+        console.log('Total Existing Sentences:', sentencesSnapshot.size);
+
+        if (sentencesSnapshot.empty) {
+          // Create initial sentences if none exist
+          const initialSentences = [
+            {
+              sentence: 'Serendipity',
+              definition: 'The occurrence and development of events by chance in a happy or beneficial way',
+              imageUrl: 'https://via.placeholder.com/150',
+              userId: currentUser.uid,
+              box: 1,
+              lastReviewed: null,
+              nextReview: new Date(),
+            },
+            {
+              sentence: 'Ephemeral',
+              definition: 'Lasting for a very short time',
+              imageUrl: 'https://via.placeholder.com/150',
+              userId: currentUser.uid,
+              box: 1,
+              lastReviewed: null,
+              nextReview: new Date(),
+            }
+          ];
+
+          for (const sentence of initialSentences) {
+            const docRef = await addDoc(sentencesRef, {
+              ...sentence,
+              nextReview: Timestamp.fromDate(sentence.nextReview),
+              lastReviewed: null
+            });
+            console.log('📝 Created Initial Sentence:', docRef.id);
+          }
+
+          console.log('✅ Initial sentences created successfully');
+        }
+
+        console.groupEnd();
+      } catch (err) {
+        console.group('❌ Initial Sentences Error');
+        console.error('Detailed Error:', err);
+        
+        // Attempt to reconnect emulator if connection failed
+        if (!firebaseUtils.isEmulatorConnected()) {
+          console.log('🔄 Attempting to reconnect emulator');
+          firebaseUtils.retryEmulatorConnection();
+        }
+        
+        console.groupEnd();
       }
+    };
+
+    checkAndCreateInitialSentences();
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setError('You must be logged in to add or edit sentences');
+      return;
     }
-  }, [id, isEditMode]);
+
+    setFormData(prevData => ({
+      ...prevData,
+      userId: currentUser.uid,
+    }));
+
+    if (isEditMode) {
+      const fetchSentence = async () => {
+        try {
+          const sentenceRef = doc(db, 'sentences', id);
+          const sentenceSnap = await getDoc(sentenceRef);
+
+          if (sentenceSnap.exists()) {
+            const sentenceData = sentenceSnap.data();
+            setFormData({
+              sentence: sentenceData.sentence,
+              definition: sentenceData.definition,
+              imageUrl: sentenceData.imageUrl || '',
+              userId: sentenceData.userId,
+              box: sentenceData.box || 1,
+              lastReviewed: sentenceData.lastReviewed ? sentenceData.lastReviewed.toDate() : null,
+              nextReview: sentenceData.nextReview ? sentenceData.nextReview.toDate() : null,
+            });
+            setImagePreview(sentenceData.imageUrl || '');
+          } else {
+            setError('Sentence not found');
+          }
+        } catch (err) {
+          console.error('Error fetching sentence:', err);
+          setError('Failed to fetch sentence details');
+        }
+      };
+
+      fetchSentence();
+    }
+  }, [id, isEditMode, currentUser]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -71,23 +159,6 @@ const SentenceForm: React.FC = () => {
       ...formData,
       [name]: value,
     });
-
-    // If the sentence field is changed and has at least 3 characters, simulate fetching definition suggestions
-    if (name === 'sentence' && value.length >= 3) {
-      // Simulate API call delay
-      setTimeout(() => {
-        // This would be replaced with actual API calls in a real application
-        const mockDefinition = `Example definition for "${value}" (In a real app, this would be fetched from Oxford Dictionary API)`;
-        setSuggestedDefinition(mockDefinition);
-        
-        // Mock suggested images
-        setSuggestedImages([
-          'https://via.placeholder.com/150?text=Image1',
-          'https://via.placeholder.com/150?text=Image2',
-          'https://via.placeholder.com/150?text=Image3',
-        ]);
-      }, 500);
-    }
   };
 
   const handleImageUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -99,68 +170,102 @@ const SentenceForm: React.FC = () => {
     setImagePreview(value);
   };
 
-  const handleSuggestedDefinitionClick = () => {
-    setFormData({
-      ...formData,
-      definition: suggestedDefinition,
-    });
-  };
-
-  const handleSuggestedImageClick = (imageUrl: string) => {
-    setFormData({
-      ...formData,
-      imageUrl: imageUrl,
-    });
-    setImagePreview(imageUrl);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
     setSuccess('');
 
+    console.group('📝 Sentence Submission');
+    console.log('Edit Mode:', isEditMode);
+    console.log('User ID:', currentUser?.uid);
+    console.log('Emulator Mode:', useEmulator);
+    console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
+
     try {
-      // In a real app, you would send the data to your API
-      // For demo purposes, we'll simulate a successful submission
-      setTimeout(() => {
-        setLoading(false);
-        setSuccess(isEditMode ? 'Sentence updated successfully!' : 'Sentence added successfully!');
-        
-        // Redirect after a short delay
-        setTimeout(() => {
-          navigate('/sentences');
-        }, 1500);
-      }, 1000);
-
-      // Example of how the actual API call would look:
-      /*
-      const token = localStorage.getItem('token');
-      const url = isEditMode ? `/api/sentences/${id}` : '/api/sentences';
-      const method = isEditMode ? 'PUT' : 'POST';
-      
-      const response = await fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(formData)
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to save sentence');
+      // Validate input data
+      if (!formData.sentence || !formData.definition) {
+        throw new Error('Sentence and definition are required');
       }
 
-      setSuccess(isEditMode ? 'Sentence updated successfully!' : 'Sentence added successfully!');
+      // Validate user authentication
+      if (!currentUser?.uid) {
+        throw new Error('User must be authenticated to create or edit sentences');
+      }
+
+      // Prepare data for Firestore
+      const sentenceData = {
+        ...formData,
+        userId: currentUser.uid, // Explicitly set userId
+        lastReviewed: formData.lastReviewed ? Timestamp.fromDate(formData.lastReviewed) : null,
+        nextReview: formData.nextReview ? Timestamp.fromDate(formData.nextReview) : null,
+      };
+
+      // Additional logging for debugging
+      console.log('Sentence Data with Explicit UserID:', {
+        ...sentenceData,
+        userId: '***' // Mask the actual user ID for privacy
+      });
+
+      console.log('Sentence Data:', sentenceData);
+
+      if (isEditMode) {
+        // Update existing sentence
+        const sentenceRef = doc(db, 'sentences', id);
+        
+        // Additional validation for edit mode
+        const existingDoc = await getDoc(sentenceRef);
+        if (!existingDoc.exists()) {
+          throw new Error('Sentence not found');
+        }
+
+        // Verify user ownership in edit mode
+        const existingData = existingDoc.data();
+        if (existingData?.userId !== currentUser?.uid) {
+          throw new Error('Not authorized to edit this sentence');
+        }
+
+        await updateDoc(sentenceRef, sentenceData);
+        console.log('✅ Sentence updated successfully');
+        setSuccess('Sentence updated successfully!');
+      } else {
+        // Add new sentence
+        const sentencesRef = collection(db, 'sentences');
+        const docRef = await addDoc(sentencesRef, sentenceData);
+        console.log('✅ Sentence added successfully:', docRef.id);
+        setSuccess('Sentence added successfully!');
+      }
+
+      console.groupEnd();
+
+      // Redirect after a short delay
       setTimeout(() => {
         navigate('/sentences');
       }, 1500);
-      */
     } catch (err) {
-      setError('Failed to save sentence. Please try again.');
+      console.group('❌ Sentence Submission Error');
+      console.error('Detailed Error:', err);
+      
+      // Detailed error handling
+      if (err instanceof Error) {
+        console.error('Error Name:', err.name);
+        console.error('Error Message:', err.message);
+        console.error('Error Stack:', err.stack);
+        
+        // Set user-friendly error message
+        setError(err.message || 'Failed to save sentence. Please try again.');
+      } else {
+        setError('An unexpected error occurred. Please try again.');
+      }
+      
+      // Attempt to reconnect emulator if connection failed
+      if (!firebaseUtils.isEmulatorConnected()) {
+        console.log('🔄 Attempting to reconnect emulator');
+        firebaseUtils.retryEmulatorConnection();
+      }
+      
+      console.groupEnd();
+      
       setLoading(false);
     }
   };
@@ -203,21 +308,6 @@ const SentenceForm: React.FC = () => {
               placeholder="Enter the English definition"
               rows={4}
             />
-            {suggestedDefinition && (
-              <div className="suggestion-box">
-                <p>Suggested definition:</p>
-                <div className="suggestion-content">
-                  {suggestedDefinition}
-                </div>
-                <button 
-                  type="button" 
-                  className="btn-secondary suggestion-button"
-                  onClick={handleSuggestedDefinitionClick}
-                >
-                  Use this definition
-                </button>
-              </div>
-            )}
           </div>
 
           <div className="form-group">
@@ -237,23 +327,6 @@ const SentenceForm: React.FC = () => {
               </div>
             )}
           </div>
-
-          {suggestedImages.length > 0 && (
-            <div className="suggestion-box">
-              <p>Suggested images:</p>
-              <div className="suggested-images">
-                {suggestedImages.map((imageUrl, index) => (
-                  <div 
-                    key={index} 
-                    className="suggested-image"
-                    onClick={() => handleSuggestedImageClick(imageUrl)}
-                  >
-                    <img src={imageUrl} alt={`Suggestion ${index + 1}`} />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="form-actions">
             <button 
