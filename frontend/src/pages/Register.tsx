@@ -1,61 +1,50 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
 const Register: React.FC = () => {
-  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { signup } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // Validate passwords match
     if (password !== confirmPassword) {
       setError('Passwords do not match');
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
-
     try {
-      // In a real application, this would be an API call to your backend
-      // For demo purposes, we'll simulate a successful registration
-      setTimeout(() => {
-        // Mock successful registration
-        localStorage.setItem('token', 'demo-token');
-        localStorage.setItem('user', JSON.stringify({ name, email }));
-        setLoading(false);
-        navigate('/');
-      }, 1000);
-
-      // Example of how the actual API call would look:
-      /*
-      const response = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name, email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Registration failed');
-      }
-
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      await signup(email, password);
       navigate('/');
-      */
-    } catch (err) {
-      setError('Registration failed. Please try again.');
+    } catch (err: any) {
+      // More specific error handling
+      switch (err.code) {
+        case 'auth/email-already-in-use':
+          setError('Email is already registered');
+          break;
+        case 'auth/invalid-email':
+          setError('Invalid email address');
+          break;
+        case 'auth/weak-password':
+          setError('Password is too weak. Please use a stronger password.');
+          break;
+        case 'auth/operation-not-allowed':
+          setError('Account creation is currently disabled');
+          break;
+        default:
+          setError('Failed to create an account. Please try again.');
+      }
+      console.error('Signup Error:', err);
       setLoading(false);
     }
   };
@@ -64,23 +53,11 @@ const Register: React.FC = () => {
     <div className="auth-container">
       <div className="auth-card">
         <h2 className="auth-title">Create an Account</h2>
-        <p className="auth-subtitle">Join ReCanto to improve your English vocabulary</p>
+        <p className="auth-subtitle">Join ReCanto and start your language learning journey</p>
 
         {error && <div className="alert alert-danger">{error}</div>}
 
         <form onSubmit={handleSubmit} className="auth-form">
-          <div className="form-group">
-            <label htmlFor="name">Name</label>
-            <input
-              type="text"
-              id="name"
-              className="form-control"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-
           <div className="form-group">
             <label htmlFor="email">Email</label>
             <input
@@ -107,10 +84,10 @@ const Register: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="confirmPassword">Confirm Password</label>
+            <label htmlFor="confirm-password">Confirm Password</label>
             <input
               type="password"
-              id="confirmPassword"
+              id="confirm-password"
               className="form-control"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

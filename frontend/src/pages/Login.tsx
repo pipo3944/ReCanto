@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
 const Login: React.FC = () => {
@@ -8,6 +9,7 @@ const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -15,38 +17,27 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      // In a real application, this would be an API call to your backend
-      // For demo purposes, we'll simulate a successful login
-      setTimeout(() => {
-        // Mock successful login
-        localStorage.setItem('token', 'demo-token');
-        localStorage.setItem('user', JSON.stringify({ email }));
-        setLoading(false);
-        navigate('/');
-      }, 1000);
-
-      // Example of how the actual API call would look:
-      /*
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
-      }
-
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
+      await login(email, password);
       navigate('/');
-      */
-    } catch (err) {
-      setError('Invalid email or password');
+    } catch (err: any) {
+      // More specific error handling
+      switch (err.code) {
+        case 'auth/user-not-found':
+          setError('No account found with this email');
+          break;
+        case 'auth/wrong-password':
+          setError('Incorrect password');
+          break;
+        case 'auth/invalid-email':
+          setError('Invalid email address');
+          break;
+        case 'auth/user-disabled':
+          setError('This account has been disabled');
+          break;
+        default:
+          setError('Failed to log in. Please try again.');
+      }
+      console.error('Login Error:', err);
       setLoading(false);
     }
   };

@@ -15,47 +15,52 @@ import Stats from './pages/Stats';
 import Header from './components/Header';
 import ProtectedRoute from './components/ProtectedRoute';
 
+// Context
+import { AuthProvider } from './contexts/AuthContext';
+
 function App() {
   return (
-    <div className="app">
-      <Header />
-      <main className="main-content">
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/sentences" element={
-            <ProtectedRoute>
-              <SentenceList />
-            </ProtectedRoute>
-          } />
-          <Route path="/sentences/new" element={
-            <ProtectedRoute>
-              <SentenceForm />
-            </ProtectedRoute>
-          } />
-          <Route path="/sentences/edit/:id" element={
-            <ProtectedRoute>
-              <SentenceForm />
-            </ProtectedRoute>
-          } />
-          <Route path="/quiz" element={
-            <ProtectedRoute>
-              <Quiz />
-            </ProtectedRoute>
-          } />
-          <Route path="/stats" element={
-            <ProtectedRoute>
-              <Stats />
-            </ProtectedRoute>
-          } />
-        </Routes>
-      </main>
-    </div>
+    <AuthProvider>
+      <div className="app">
+        <Header />
+        <main className="main-content">
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/" element={
+              <ProtectedRoute>
+                <Dashboard />
+              </ProtectedRoute>
+            } />
+            <Route path="/sentences" element={
+              <ProtectedRoute>
+                <SentenceList />
+              </ProtectedRoute>
+            } />
+            <Route path="/sentences/new" element={
+              <ProtectedRoute>
+                <SentenceForm />
+              </ProtectedRoute>
+            } />
+            <Route path="/sentences/edit/:id" element={
+              <ProtectedRoute>
+                <SentenceForm />
+              </ProtectedRoute>
+            } />
+            <Route path="/quiz" element={
+              <ProtectedRoute>
+                <Quiz />
+              </ProtectedRoute>
+            } />
+            <Route path="/stats" element={
+              <ProtectedRoute>
+                <Stats />
+              </ProtectedRoute>
+            } />
+          </Routes>
+        </main>
+      </div>
+    </AuthProvider>
   );
 }
 
