@@ -9,9 +9,10 @@ import {
   Timestamp,
   getDocs 
 } from 'firebase/firestore';
-import { db, useEmulator, firebaseUtils } from '../config/firebaseConfig';
+import { db, firebaseUtils } from '../config/firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
 import './SentenceForm.css';
+import { isUsingEmulator } from '../utils/env';
 
 interface SentenceFormData {
   sentence: string;
@@ -50,7 +51,7 @@ const SentenceForm: React.FC = () => {
       try {
         console.group('🌱 Initial Sentences Check');
         console.log('User ID:', currentUser.uid);
-        console.log('Emulator Mode:', useEmulator);
+        console.log('Emulator Mode:', isUsingEmulator);
         console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
 
         const sentencesRef = collection(db, 'sentences');
@@ -179,7 +180,7 @@ const SentenceForm: React.FC = () => {
     console.group('📝 Sentence Submission');
     console.log('Edit Mode:', isEditMode);
     console.log('User ID:', currentUser?.uid);
-    console.log('Emulator Mode:', useEmulator);
+    console.log('Emulator Mode:', isUsingEmulator);
     console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
 
     try {

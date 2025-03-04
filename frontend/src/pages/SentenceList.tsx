@@ -8,9 +8,10 @@ import {
   deleteDoc, 
   doc 
 } from 'firebase/firestore';
-import { db, useEmulator, firebaseUtils } from '../config/firebaseConfig';
+import { db, firebaseUtils } from '../config/firebaseConfig';
 import { useAuth } from '../contexts/AuthContext';
 import './SentenceList.css';
+import { isUsingEmulator } from '../utils/env';
 
 interface Sentence {
   id: string;
@@ -47,7 +48,7 @@ const SentenceList: React.FC = () => {
         console.group('🔍 Sentence Fetch Diagnostics');
         console.log('User ID:', currentUser.uid);
         console.log('Firestore Database:', db);
-        console.log('Emulator Mode:', useEmulator);
+        console.log('Emulator Mode:', isUsingEmulator);
         console.log('Emulator Connected:', firebaseUtils.isEmulatorConnected());
 
         // Attempt to fetch all documents first to diagnose any potential issues
@@ -69,7 +70,7 @@ const SentenceList: React.FC = () => {
               data.sentence && 
               data.definition && 
               // In production or emulator, ensure userId matches
-              (useEmulator || data.userId === currentUser.uid)
+              (isUsingEmulator || data.userId === currentUser.uid)
             );
             
             if (!isValid) {
@@ -77,7 +78,7 @@ const SentenceList: React.FC = () => {
                 hasValidSentence: !!data.sentence,
                 hasValidDefinition: !!data.definition,
                 userIdMatch: data.userId === currentUser.uid,
-                emulatorMode: useEmulator
+                emulatorMode: isUsingEmulator
               });
             }
             
